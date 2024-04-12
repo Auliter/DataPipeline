@@ -1,0 +1,93 @@
+Questions on Report Writing:
+※数据获取篇
+1.
+Twitter数据爬取方面，代码里显示大概用了9个key words，这9个key words是怎么选取的；之后在github里面只显示了三个key words相关的raw data，这里又是怎么选取的，为什么只选取了这三个关键词作为代表。
+本来希望可以从文献中获取一些如何选择key words的提示，但是目前我不清楚，所以就拍脑袋想了一些关键词，经过人工筛选，目测出了9个看起来还不错的key words，不过这9个key words都是tesla和另一个词的搭配，
+理论上可以设置三个词的关键词组，但是不太清楚如何选取以及为什么（听说是用名词会比较中性，但我们选的不完全是名词），只显示了三个key words相关的data是因为测试阶段只浅浅跑了三个key words来测试能否跑通，
+没有为什么，后续pipeline完工后可以尝试更多key words的twitter爬取存进AZure走一遍全流程。
+
+2.
+对三类数据的数据日更是如何完成的？怎样的操作（代码等？）
+现在三类数据的爬虫都是在AZure的Virtual Machine上完成的，通过Ubuntu的Crontab功能来实现的，具体的代码在crontabCommand.txt文件里面的这三行代码
+03 15 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_reddit_scraper/reddit_alternative.py >> /home/hadoop/cronTab.log
+20 15 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_twitter_scraper/parallel_search_with_limit.py
+40 15 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_AlphaVantage_scraper/\[Updated\]\ get\ TSLA\ 2Y\ data\ 2.py >> /home/hadoop/cronTab.log
+他们表示在每天的15：03， 15：20， 15：40三个时间点分别运行reddit_alternative.py, parallel_search_with_limit.py和twitter_alternative.py三个script来爬取reddit, twitter和alpha vantage的数据并把他们分别储存在HDFS里面。
+同样的，其它在crontabCommand.txt里的命令是为了在HDFS上创建每日的数据文件夹：
+00 15 * * * hdfs dfs -mkdir /data/reddit/"$(date +"%Y-%m-%d")"
+01 15 * * * hdfs dfs -mkdir /data/alphavantage/"$(date +"%Y-%m-%d")"
+02 15 * * * hdfs dfs -mkdir /data/tweets/"$(date +"%Y-%m-%d")"
+总共会在HDFS上创建三个文件夹分别储存爬取到的三类数据
+然后执行：
+20 16 * * * spark-submit --packages com.johnsnowlabs.nlp:spark-nlp_2.12:5.3.3 /home/hadoop/QF5214Git/QF5214/_code/_data_process/sentiment_process.py ../../data/tweets/
+00 17 * * * spark-submit --packages com.johnsnowlabs.nlp:spark-nlp_2.12:5.3.3 /home/hadoop/QF5214Git/QF5214/_code/_data_process/sentiment_process.py ../../data/reddit/
+来完成对爬取到的tweeter和reddit数据做情感分析和处理
+最后执行：
+30 17 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_data_process/saveToMySQL.py reddit
+30 18 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_data_process/saveToMySQL.py tweets
+50 18 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_data_process/saveToMySQLOtherTable.py
+来把情绪分析的结果和alpha vantage的股价数据传输到设置在阿里云的MYSQL服务器上。
+
+※数据库篇
+1.
+HDFS和MySQL这两个数据库具体是怎么构建的，需要怎样操作？（比如，写代码，或者是在某个云平台上创建，我也不太懂）有什么特征长什么样子？（例如：容量大小等）
+MySQL是构建在阿里云上的，通过下载MYSQL的数据软件安装在阿里云的Ubuntu virtual machine上构建的，然后我是开了一个root权限的user来准许通过公网链接对那个MySQL数据库的内容进行比如访问，添加和查询的操作。 HDFS是创建在Azure的Virtual
+machine上面的，没有建在阿里云上是因为阿里云的计算资源不足够支持运行HDFS。大小的话MySQL和HDFS都是根据虚拟机有的储存大小来决定的，都能储存大概几百GB的数据。然后MySQL上总共有三个Table， Sentiment， TwSentiment和stockPrice三个来
+分别储存reddit的情感分析结果，twitter的情感分析结果和股价数据。Sentiment包括日期，url，评论数，得分，情感类别和原始内容这几个部分。TwSentiment包括日期，原始内容，url，回复数，转发数，点赞数，情感这几个内容。stockPrice则包括
+日期，开市价，闭市价，日最高价，日最低价，股票代码几部分。为了为了除重，TwSentiment和Sentiment两个table都是以url作为Primary Key来保证没有重复，stockPrice则是以日期来作为Primary key。
+
+2.
+数据在数据库里的存储模式是怎样的？数据的上传又是如何完成的？例如我们这里爬虫得到的三大类的数据，是如何上传到HDFS数据库当中。
+————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+原框架中数据库与数据存储部分：
+2. 数据库构建与数据存储
+1）Azure cloud中HDFS数据库（single node，可扩展到多node）用于存放raw data（.json文件）
+2）Alibaba Cloud中MySQL数据库用于存放processed data
+优势：使用云平台；跨云平台，贴近企业实际应用场景；HDFS的优势（e.g.便于OLTP）；MySQL的优势（e.g.便于OLAP）；二者的结合应用；.json文件易读易取占用小
+
+
+※数据处理篇
+1.
+数据处理当中，三个部分分别对应github的哪一部分代码？
+数据处理里saveToMySQL和saveToMySQLOtherTable都是上传数据到MySQL的，只有sentiment_process是用来处理爬取到的推特和reddit原始数据并生成结果的。原始数据和生成的结果都储存在HDFS上面。
+
+2.
+Raw data处理当中，single node是什么？另外传输了什么、reorganize了什么、这里的要得到的feature是什么
+single node是我们HDFS的configuration，表示我们只有一个节点，通常的HDFS都是多节点的，这样可以保证数据一般会有多个备份，防止数据遗失，我们这个设置数据的多个备份。我们做的这个主要是为了证明说流程是可以跑通的，后续如果要构建多节点的
+也容易在single node的基础上拓展。但是一般因为HDFS的特性，多节点的HDFS cluster一般是用在物理距离相近的数据中心中，这样保证传输的overhead最低，我们因为没有这个设备和硬件，所以选择用云平台的Virtual Machine来构建要给single node的
+只是为了证明流程是可以实现的。传输的流程是VM上跑爬虫程序，获取数据后传输到HDFS上，然后在HDFS上通过spark跑情绪处理模型，获取到的结果储存在HDFS里面最后把情绪处理模型的结果传输到MySQL里面。这里得到的feature主要是情绪处理的结果，其它
+的数据都是爬虫获得的直接传到MySQL上。
+
+3.
+训练构建feature当中，想知道这里是利用sample data进行训练吗？还想具体了解一下“pysaprk-nlp中基于bert的nlp模型”
+
+4.
+数据是怎样从HDFS传输到MySQL的？虽然知道是利用spark，但想知道更具体的过程。
+也不能说是利用Spark吧，主要其实是通过python里面MySQL的library，创建了一个到MySQL数据库的链接器然后通过它来执行的访问/加入/查询这些操作，spark主要是为了可以简单的访问HDFS的数据并且把上传的这个步骤做一个并行处理，使得上传速度可以更
+快一些。具体的代码在saveToMySQL和saveToMySQLOtherTable两个文件里面。
+
+_____________________________________________________________________________________________________
+原框架中数据处理部分：
+3. 数据处理
+1）在Azure上利用Spark处理HDFS中的raw data（single node，可扩展到多node），工作包括传输，reorganize，feature engineering
+2）利用spark，选择pysaprk-nlp中基于bert的nlp模型，在twitter文本数据上训练，对twitter数据和reddit数据构架positive/negative二分类sentiment feature
+3）利用spark将处理好的数据传入Alibaba Cloud中的MySQL数据库
+优势：使用云平台；spark的优势（e.g.对计算资源的利用，调用复杂模型的能力）
+
+
+现在先想到了这么多，后面应该还有好多问题（）
+Yuze Charles
+
+※股价模型篇
+因为模型不重要，选择了最最最简单的线性回归模型，利用AlphaVantage的close数据构建了四个不知道有没有用的因子，分别叫momentum（动量因子），percent（高低位因子），
+max_20（过去20天最大值因子）和RL（最简版阻力价位因子）。因为sentiment process出来的都是日频的因子，所以只选了close作为日频因子的构建依据，毕竟连交易量都没有没法写
+更多garbage factors。
+sentiment process得到的features名目详见※数据库篇1. 另外同问※数据处理篇3.不太懂，所以同样拍脑袋觉得score可能是个权重，想了想用score乘sentiment得到senti_reddit作为reddit方面构建的因子，
+同样的用了likeCount乘上sentiment得到senti_twitter作为twitter方面的因子，然后用四个AlphaVantage构建的因子和两个数据源提供的sentiment feature来训练一个线性回归模型，
+用这个模型来预测TSLA的下一天的股价，当然要预测更遥远的未来股价也可以，但是么时间有限，改进仍有空间。
+理论上最后可以把预测的股价结果传输到MySQL数据库里面假装是一个client可以调用的service，但是不会写，需要helper补一个传到数据库的代码。 
+然后也有写一个可视化，但是这个要不要上云然后怎么上云我又不会了。 
+By the way, sentiment_process处理好的数据什么时候能正常，什么时候就可以测试股价模型的结果。
+因为模型部分不打分，所以即便这里有很多可以深挖提升的地方，我们暂时也没做，留给报告中的未来展望，比如模型可以更复杂追求一下精度，sentiment features预处理是否可以更仔细，
+score和likeCount作为权重是否合理，是否需要利用上※数据库篇1回答中的其他column。本学年最恐怖的一周就要来了，大家加油！
+Yang Wendi

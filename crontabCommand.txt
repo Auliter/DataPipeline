@@ -1,0 +1,34 @@
+# Edit this file to introduce tasks to be run by cron.
+#
+# Each task to run has to be defined through a single line
+# indicating with different fields when the task will be run
+# and what command to run for the task
+#
+# To define the time you can provide concrete values for
+# minute (m), hour (h), day of month (dom), month (mon),
+# and day of week (dow) or use '*' in these fields (for 'any').
+#
+# Notice that tasks will be started based on the cron's system
+# daemon's notion of time and timezones.
+#
+# Output of the crontab jobs (including errors) is sent through
+# email to the user the crontab file belongs to (unless redirected).
+#
+# For example, you can run a backup of all your user accounts
+# at 5 a.m every week with:
+# 0 5 * * 1 tar -zcf /var/backups/home.tgz /home/
+#
+# For more information see the manual pages of crontab(5) and cron(8)
+#
+# m h  dom mon dow   command
+00 15 * * * hdfs dfs -mkdir /data/reddit/"$(date +"%Y-%m-%d")"
+01 15 * * * hdfs dfs -mkdir /data/alphavantage/"$(date +"%Y-%m-%d")"
+02 15 * * * hdfs dfs -mkdir /data/tweets/"$(date +"%Y-%m-%d")"
+03 15 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_reddit_scraper/reddit_alternative.py >> /home/hadoop/cronTab.log
+20 15 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_twitter_scraper/twitter_alternative.py
+40 15 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_AlphaVantage_scraper/\[Updated\]\ get\ TSLA\ 2Y\ data\ 2.py >> /home/hadoop/cronTab.log
+20 16 * * * spark-submit --packages com.johnsnowlabs.nlp:spark-nlp_2.12:5.3.3 /home/hadoop/QF5214Git/QF5214/_code/_data_process/sentiment_process.py ../../data/tweets/
+00 17 * * * spark-submit --packages com.johnsnowlabs.nlp:spark-nlp_2.12:5.3.3 /home/hadoop/QF5214Git/QF5214/_code/_data_process/sentiment_process.py ../../data/reddit/
+30 17 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_data_process/saveToMySQL.py reddit
+30 18 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_data_process/saveToMySQL.py tweets
+50 18 * * * spark-submit /home/hadoop/QF5214Git/QF5214/_code/_data_process/saveToMySQLOtherTable.py
